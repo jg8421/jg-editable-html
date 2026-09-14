@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>pv-editable-html · 最小样例</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--ink:#092C61;--line:#d7d9dc;--muted:#727375;--concl:#FDF3AD;--page:#f5f2ee}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:70px}
+body{margin:0;background:var(--page);color:#1c1c1e;font-family:Arial,"Kaiti SC",KaiTi,"楷体","Microsoft YaHei",sans-serif;font-size:15.5px;line-height:1.62}
+.wrap{max-width:1100px;margin:0 auto;padding:0 22px 80px}
+h1{font-size:30px;color:var(--ink);margin:26px 0 6px}
+h2{font-size:22px;color:var(--ink);margin:24px 0 6px}
+.concl{background:var(--concl);border:1.5px solid #1c1c1e;border-radius:3px;padding:12px 16px;margin:12px 0}
+.concl .t{font-weight:700;font-size:13px;color:#5a4b00;display:block;margin-bottom:2px}
+table{width:100%;border-collapse:collapse;margin:12px 0;background:#fff;font-size:14.2px}
+th,td{border:1px solid var(--line);padding:7px 9px;text-align:left}
+th{background:#edf2f8;color:var(--ink)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:12px 0}
+.card{background:#fff;border:1px solid var(--line);border-radius:4px;padding:12px 14px}
+.card .kpi{font-size:24px;color:var(--ink);font-weight:700}
+@media(max-width:800px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>最小样例：一个可以被任意编辑的 HTML</h1>
+  <p style="color:var(--muted)">这个文件本身就是用 <b>build_panel.py</b> 生成的。打开后：点任意元素 → 工具条；鼠标划过文字 → 右侧 A− / A+；Ctrl+S → 保存回本文件。</p>
+
+  <div class="concl">
+    <span class="t">结论（黄色框，随便改）</span>
+    <ul>
+      <li>点这一行 → 出现工具条 → 直接改字、改字号、改颜色、删除。</li>
+      <li>鼠标移到这一行上 → 右侧出现 <b>A− 15.5px A+</b>，点一下就能调大小。</li>
+      <li><b>点选之后按钮会钉住</b>，鼠标挪过去也不会消失。</li>
+    </ul>
+  </div>
+
+  <h2>1. 一排卡片（删掉一张，其余自动铺满）</h2>
+  <div class="grid">
+    <div class="card"><div class="kpi">1,234</div><div style="color:var(--muted);font-size:13px">第一张卡片</div></div>
+    <div class="card"><div class="kpi">5,678</div><div style="color:var(--muted);font-size:13px">第二张卡片</div></div>
+    <div class="card"><div class="kpi">9,012</div><div style="color:var(--muted);font-size:13px">第三张卡片</div></div>
+  </div>
+
+  <h2>2. 一张表（可加行减行、可改字）</h2>
+  <table>
+    <thead><tr><th style="width:24%">项目</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>改文字</td><td>双击任意文字直接改；或点元素后用工具条的 <b>A</b></td></tr>
+      <tr><td>改字号</td><td>划过文字用右侧 <b>A− / A+</b>；或工具条里的字号下拉</td></tr>
+      <tr><td>删元素</td><td>选中后按 <b>Delete</b> 或 <b>Backspace</b>，其余元素自动补位</td></tr>
+      <tr><td>撤销</td><td><b>Ctrl+Z</b></td></tr>
+    </tbody>
+  </table>
+
+  <h2>3. 手写 SVG 图表（连图里的数字都能改）</h2>
+  <div style="background:#fff;border:1px solid var(--line);border-radius:4px;padding:12px">
+    <svg viewBox="0 0 600 220" style="width:100%;height:auto">
+      <line x1="60" y1="180" x2="560" y2="180" stroke="#d7d9dc"></line>
+      <rect x="90" y="100" width="60" height="80" fill="#3f6ea8" rx="2"></rect>
+      <text x="120" y="115" font-size="12" fill="#ffffff" text-anchor="middle" font-family="Arial" font-weight="bold">40</text>
+      <rect x="220" y="60" width="60" height="120" fill="#3f6ea8" rx="2"></rect>
+      <text x="250" y="75" font-size="12" fill="#ffffff" text-anchor="middle" font-family="Arial" font-weight="bold">60</text>
+      <rect x="350" y="30" width="60" height="150" fill="#3f6ea8" rx="2"></rect>
+      <text x="380" y="45" font-size="12" fill="#ffffff" text-anchor="middle" font-family="Arial" font-weight="bold">75</text>
+      <text x="120" y="200" font-size="12" fill="#727375" text-anchor="middle" font-family="Arial">2024</text>
+      <text x="250" y="200" font-size="12" fill="#727375" text-anchor="middle" font-family="Arial">2025</text>
+      <text x="380" y="200" font-size="12" fill="#727375" text-anchor="middle" font-family="Arial">2026E</text>
+    </svg>
+  </div>
+
+  <h2>4. 加批注</h2>
+  <p>把右下角「✎ 任意编辑」关掉 → 选中任意一句话 → 点浮出的「＋ 批注」→ Ctrl+Enter。右缘的「批注」标签里能看到全部批注，可以定位、标已处理、导出 .md。</p>
+
+</div>
+</body>
+</html>

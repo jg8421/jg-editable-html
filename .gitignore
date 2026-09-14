@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 云盘同步产生的临时文件
+*.baiduyun.uploading.cfg
+*.tmp
+
+# 编辑器
+.vscode/
+.idea/
