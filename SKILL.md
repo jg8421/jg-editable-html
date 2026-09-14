@@ -72,6 +72,12 @@ python verify_panel.py out.html
 12. **工具条必须用 `position:fixed` + 视口坐标定位。** 编辑器的浮层容器 `#pvanyedit-ui` 本身是 `position:fixed` 但**没有 top/left**，它的静态位置在文档末尾；此时若工具条写成 `position:absolute` 并用"文档坐标"（`pageYOffset + rect.top`）定位，**工具条会被放到文档几万像素处 —— 看起来就是"点了没反应"**。正确写法：工具条 `position:fixed`，`top = rect.top - barH - 6`（放不下就翻到元素下方），再按视口宽高钳制。`verify_panel.py` 已内置这项断言（会打印 `toolbar = inside-viewport:…`）。
 13. **若面板带「阅读 / 编辑」模式开关（`pv-mode.js`，默认阅读模式）**，自检与截图都要**先切到编辑模式**再断言工具条/浮动按钮；否则会得到一堆"看不见"的假失败。
 
+14. **"第一次保存默认开在当前文件夹"做不到，不要承诺。** Chrome 没有"从文件句柄反查所在目录"的接口（`FileSystemFileHandle.prototype.getParent` 在 Chrome 153 仍是 `undefined`），也没有"路径字符串 → 目录句柄"的 API，所以首次弹窗的起始目录由浏览器决定（通常是"下载"）。**正确做法是给出"只做一次"的更优路径并显著引导**：
+    - **授权文件夹一次** → 整个文件夹永久免弹窗（`dir.getFileHandle(同名文件,{create:true})` 静默覆盖，对所有文件有效）；
+    - 把文件/文件夹**拖进页面**（`getAsFileSystemHandle()`）→ 零弹窗；
+    - 首次弹 文件选择器时，**预填文件名**（`suggestedName`）+ `id`（让 Chrome 记住该 id 上次用过的目录）+ 已知句柄作 `startIn`。
+    页面首次打开且无句柄时，**底部弹一次性引导条**引导做上面第一件事。
+
 ## 5. 交付前必须跑的检查
 
 `verify_panel.py` 会自动跑完并就 FAIL 给出退出码 1：

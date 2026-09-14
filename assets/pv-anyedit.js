@@ -634,9 +634,17 @@
   }
   var dirHandle=null, pickerPatched=false;
   function loadDir(){
-    notesGet('pae_dir').then(function(d){
-      if(d && typeof d.getFileHandle==='function'){ dirHandle=d; updateAuthBtn(); }
+    readHandle('dir').then(function(d){
+      if(d && typeof d.getFileHandle==='function'){ dirHandle=d; updateAuthBtn(); refreshSaveHint(); }
     });
+  }
+  function refreshSaveHint(){
+    var b=document.querySelector('[data-pae="save"]');
+    if(!b) return;
+    var t = dirHandle ? '已授权文件夹：Ctrl+S 直接覆盖，不再弹窗'
+          : memHandle ? '已记住这个文件：Ctrl+S 直接覆盖'
+          : '首次保存需要授权一次（窗口会预填文件名）';
+    b.setAttribute('title', t+'　—— 点这里保存');
   }
   /* 关键：文件句柄必须在 boot 阶段就读进内存。
      否则 Ctrl+S 时要先 await IndexedDB，等回来时浏览器的"用户手势"窗口可能已经过期，
@@ -645,9 +653,9 @@
   function loadFileHandle(){
     if(memHandle || fhChecked) return;
     fhChecked=true;                       /* 只读一次，避免轮询里反复打 IndexedDB */
-    notesGet(fileKey()).then(function(h){ return h || notesGet('pae_file'); }).then(function(h){
+    readHandle('file').then(function(h){
       if(h && typeof h.createWritable==='function'){
-        if(!h.name || h.name===currentName()) memHandle=h;
+        if(!h.name || h.name===currentName()){ memHandle=h; refreshSaveHint(); }
       }
     }).catch(function(){ fhChecked=false; });
   }
@@ -680,7 +688,59 @@
   }
   function notesGet(k){
     if(window.PVNotes&&window.PVNotes._idbGet) return window.PVNotes._idbGet(k).catch(function(){ return null; });
-    return Promise.resolve(null);
+    return paeGet(k);
+  }
+  /* ---- 自己的一套句柄持久化：不依赖别的模块，避免对方重构后静默失效 ---- */
+  var IDB_NAME='pvanyedit', IDB_STORE='h';
+  function paeDB(){
+    return new Promise(function(res, rej){
+      if(!window.indexedDB){ rej(new Error('no idb')); return; }
+      var rq=indexedDB.open(IDB_NAME, 1);
+      rq.onupgradeneeded=function(){ try{ rq.result.createObjectStore(IDB_STORE); }catch(e){} };
+      rq.onsuccess=function(){ res(rq.result); };
+      rq.onerror=function(){ rej(rq.error||new Error('idb open fail')); };
+      setTimeout(function(){ rej(new Error('idb timeout')); }, 2000);
+    });
+  }
+  function paeGet(k){
+    return paeDB().then(function(db){
+      return new Promise(function(res){
+        try{
+          var t=db.transaction(IDB_STORE,'readonly'), q=t.objectStore(IDB_STORE).get(k);
+          q.onsuccess=function(){ res(q.result||null); }; q.onerror=function(){ res(null); };
+        }catch(e){ res(null); }
+      });
+    }).catch(function(){ return null; });
+  }
+  function paePut(k, v){
+    return paeDB().then(function(db){
+      return new Promise(function(res){
+        try{
+          var t=db.transaction(IDB_STORE,'readwrite');
+          t.objectStore(IDB_STORE).put(v, k);
+          t.oncomplete=function(){ res(1); }; t.onerror=function(){ res(0); }; t.onabort=function(){ res(0); };
+        }catch(e){ res(0); }
+      });
+    }).catch(function(){ return 0; });
+  }
+  function handleKeys(kind){
+    var base=(location.href||'').split('#')[0];
+    return kind==='dir' ? ['dir::'+base, 'dir::*'] : ['file::'+base, 'file::*'];
+  }
+  function readHandle(kind){
+    var ks=handleKeys(kind);
+    return paeGet(ks[0]).then(function(h){
+      if(h) return h;
+      return paeGet(ks[1]).then(function(h2){
+        if(h2) return h2;
+        return notesGet(ks[0]).then(function(h3){ return h3 || notesGet(ks[1]); });
+      });
+    });
+  }
+  function writeHandle(kind, h){
+    var ks=handleKeys(kind);
+    paePut(ks[0], h); paePut(ks[1], h);
+    if(window.PVNotes&&window.PVNotes._idbPut){ window.PVNotes._idbPut(ks[0], h); window.PVNotes._idbPut(ks[1], h); }
   }
   function notesPut(k, v){
     try{ if(window.PVNotes&&window.PVNotes._idbPut) window.PVNotes._idbPut(k, v); }catch(e){}
@@ -763,8 +823,8 @@
     if(!window.showDirectoryPicker){ toast('这个浏览器不支持文件夹授权'); return; }
     window.showDirectoryPicker({id:'pvpanel-dir', mode:'readwrite'}).then(function(d){
       dirHandle=d;
-      notesPut('pae_dir', d);
-      updateAuthBtn();
+      writeHandle('dir', d);
+      updateAuthBtn(); refreshSaveHint(); hideFirstRun();
       toast('已授权文件夹「'+d.name+'」：以后 Ctrl+S 直接保存，不再弹窗');
     }).catch(function(err){
       if(err && err.name==='AbortError') return;
@@ -775,6 +835,29 @@
     var b=document.querySelector('[data-pae="auth"]');
     if(b) b.style.display = dirHandle ? 'none' : 'inline-flex';
   }
+  /* 首次运行引导：没有句柄时提示"授权一次文件夹"（一次覆盖整个文件夹，对所有文件永久生效） */
+  var FR_KEY='pvanyedit::firstrun-hidden';
+  function firstRunHidden(){ try{ return localStorage.getItem(FR_KEY)==='1'; }catch(e){ return false; } }
+  function hideFirstRun(){
+    try{ localStorage.setItem(FR_KEY,'1'); }catch(e){}
+    var b=document.getElementById('pae-firstrun');
+    if(b&&b.parentNode) b.parentNode.removeChild(b);
+  }
+  function showFirstRun(){
+    if(firstRunHidden()||dirHandle||memHandle||document.getElementById('pae-firstrun')) return;
+    var el=document.createElement('div'); el.id='pae-firstrun';
+    el.innerHTML='<span>💾 <b>一次性设置</b>：选一次这个 HTML 所在的文件夹，<b>以后所有文件 Ctrl+S 都直接覆盖、不再弹窗</b></span>'+
+                 '<button type="button" class="pae-btn" style="background:#E0731A;border-color:#E0731A;color:#fff;font-weight:700" data-pae="fr-go">📁 现在就选（只需一次）</button>'+
+                 '<button type="button" class="pae-btn" data-pae="fr-x" title="以后再说">✕</button>';
+    document.body.appendChild(el);
+    el.addEventListener('click', function(e){
+      var g=e.target.closest('[data-pae="fr-go"]');
+      if(g){ e.preventDefault(); e.stopPropagation(); authFolder(); return; }
+      var x=e.target.closest('[data-pae="fr-x"]');
+      if(x){ e.preventDefault(); e.stopPropagation(); hideFirstRun(); }
+    }, false);
+  }
+
   /* 把当前这个 HTML 文件直接从资源管理器拖进页面 —— 零弹窗拿到可写句柄 */
   function bindDrop(){
     var hint=null;
@@ -800,7 +883,7 @@
       it.getAsFileSystemHandle().then(function(h){
         if(!h) return;
         if(h.kind==='directory'){
-          dirHandle=h; notesPut('pae_dir', h); updateAuthBtn();
+          dirHandle=h; writeHandle('dir', h); updateAuthBtn(); refreshSaveHint(); hideFirstRun();
           toast('已授权文件夹「'+h.name+'」：以后 Ctrl+S 直接保存，不再弹窗');
           return;
         }
@@ -810,7 +893,7 @@
         }
         return ensurePerm(h).then(function(ok){
           if(!ok){ toast('授权被拒绝'); return; }
-          memHandle=h; notesPut(fileKey(), h); notesPut('pae_file', h);
+          memHandle=h; writeHandle('file', h); refreshSaveHint(); hideFirstRun();
           toast('已授权「'+h.name+'」：以后 Ctrl+S 直接覆盖，不再弹窗');
         });
       }).catch(function(err){ toast('拖拽授权失败：'+((err&&err.message)||'')); });
@@ -853,9 +936,9 @@
     }
     return p.then(function(fh){
       memHandle=fh;
-      notesPut(fileKey(), fh);
-      notesPut('pae_file', fh);
+      writeHandle('file', fh);
       if(fh.name) notesPut('pae_lastname', fh.name);
+      refreshSaveHint();
       return writeWith(fh, html);
     }).then(function(){ return true; }).catch(function(err){
       if(err && err.name==='AbortError'){ toast('已取消保存（再按一次 Ctrl+S，或点「💾 保存」）'); return false; }
@@ -866,13 +949,14 @@
     patchNotes(); patchPicker(); loadDir(); bindDrop();
     var tries=0, iv=setInterval(function(){
       patchNotes(); patchPicker();
-      if(!dirHandle) loadDir();          /* pv-notes 的 IDB 接口要等它自己的脚本跑完才在 */
+      if(!dirHandle) loadDir();
       loadFileHandle();
-      updateAuthBtn();
+      updateAuthBtn(); refreshSaveHint();
       if(++tries>20) clearInterval(iv);
     }, 300);
     setTimeout(function(){ applyFrozen(); applyStyles(); applyHidden(); },400);
     setTimeout(function(){ applyStyles(); },1200);
+    setTimeout(function(){ showFirstRun(); refreshSaveHint(); }, 1800);
     window.PVAnyEdit={
       on:function(){ setOn(true); }, off:function(){ setOn(false); }, undo:undo, save:saveCurrent,
       apply:function(){ applyFrozen(); applyStyles(); applyHidden(); },

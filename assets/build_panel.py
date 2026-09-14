@@ -63,6 +63,8 @@ EDITOR_CSS = u"""
 .pae-fsval{min-width:40px;text-align:center;font-size:11.5px;color:#727375}
 .pae-drop{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:none;padding:22px 30px;border:3px dashed #E0731A;border-radius:14px;background:rgba(255,255,255,.97);color:#092C61;font-size:17px;font-weight:700;z-index:2147483600;box-shadow:0 10px 40px rgba(9,44,97,.3);text-align:center;max-width:70vw}
 .pae-drop.show{display:block}
+.pae-firstrun,#pae-firstrun{position:fixed;left:50%;transform:translateX(-50%);bottom:70px;z-index:2147483300;display:flex;align-items:center;gap:10px;max-width:min(940px,94vw);padding:9px 14px;border-radius:12px;background:#fff;border:2px solid #E0731A;box-shadow:0 6px 24px rgba(9,44,97,.25);font-size:13.5px;color:#092C61;font-family:Arial,"Microsoft YaHei",sans-serif;line-height:1.5}
+@media print{#pae-firstrun{display:none!important}}
 @media print{#pvanyedit-ui,.pae-drop{display:none!important}}
 /* ================= /pv-editable-html ================= */
 """
@@ -118,12 +120,9 @@ def strip_scripts(html):
         close += len('</script>')
         open_tag = html[j:gt + 1]
         if any(('id="%s"' % b) in open_tag for b in BLOCK_IDS):
-            keep = html[i:j]
-            if keep.endswith('\n'):
-                keep = keep[:-1]           # 注入块自带的前导换行一起吃掉
-            out.append(keep)
+            out.append(html[i:j])
             if close < n and html[close] == '\n':
-                close += 1                 # 块尾换行也一起吃掉（保证反复运行字节级幂等）
+                close += 1                 # 块尾换行属于注入块，一起吃掉（保证字节级幂等）
         else:
             out.append(html[i:close])      # 用户自己的脚本：原样保留
         i = close
@@ -164,7 +163,7 @@ def build(html, editor_js, notes_js, mode_js):
     if i < 0:
         raise SystemExit('找不到 </body>')
     block = (
-        u'\n<script id="pv-anyedit-data" type="application/json">{}</script>\n'
+        u'<script id="pv-anyedit-data" type="application/json">{}</script>\n'
         u'<script id="pv-notes-data" type="application/json">{}</script>\n'
         u'<script id="pv-anyedit-module">\n' + editor_js + u'\n</script>\n'
         u'<script id="pv-notes-module">\n' + notes_js + u'\n</script>\n'
