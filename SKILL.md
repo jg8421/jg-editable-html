@@ -1,6 +1,6 @@
 ---
 name: pv-editable-html
-description: 把单文件 HTML 面板做成「既能看、又能批注、任意元素可改、Ctrl+S 就地覆盖保存」的交付物；含完整施工 SOP、注入脚本、自检脚本与全部踩过的坑。用于：用户 要一个可直接改的 HTML（研究面板 / IC 讨论稿 / 专家纪要 / 行业研究 / 一页纸）、要做能转发给同事并收回批注的 HTML、要"像 Word 一样改这个网页"。触发词：可编辑 HTML、可批注 HTML、HTML 怎么改、保存 HTML、Ctrl+S 保存、单文件面板、all in one HTML、任意元素编辑、字号调不了、另存为弹窗、HTML 交付。
+description: jg 的 HTML 交付默认通道：凡是「做个 HTML / 做个面板 / 出个网页 / 一页纸 / 交互面板 / 可编辑 HTML」这类请求，都必须先调用本技能，把成品做成带「阅读 ｜ 编辑」模式开关、可改任意元素、可批注、Ctrl+S 就地覆盖保存的单文件 HTML。含完整施工 SOP、注入脚本（pv-anyedit / pv-notes / pv-mode）、自检脚本与全部踩过的坑。默认交付流程：写 content.html → build_panel.py 注入 → verify_panel.py 自检 → 连收件人一页说明一起发。触发词：HTML、面板、交互面板、一页纸、可编辑 HTML、可批注 HTML、HTML 怎么改、保存 HTML、Ctrl+S 保存、单文件面板、all in one HTML、任意元素编辑、阅读模式、编辑模式、字号调不了、另存为弹窗、HTML 交付。
 ---
 
 # pv-editable-html · 可编辑 + 可批注 + 可就地保存的单文件 HTML
@@ -8,13 +8,15 @@ description: 把单文件 HTML 面板做成「既能看、又能批注、任意�
 ## 0. 一句话
 
 **输入**任意单文件 HTML（自带 `<style>` 与 `</style>`）→ **输出**同一个文件，但多了一层能力：
-打开就能点任意元素改字/改字号/改宽高/删元素/调顺序、选中文字加批注、**Ctrl+S 直接覆盖保存回原文件**。
+右上角多一个「**阅读 ｜ 编辑**」模式开关；进编辑模式后能点任意元素改字/改字号/改宽高/删元素/调顺序、选中文字加批注、**Ctrl+S 直接覆盖保存回原文件**。
 **全程只有一个文件**，发给谁都能打开、都能改、都能存回来。
 
 ## 1. 什么时候用
 
-- 用户说「搞个 HTML」「做个面板」，并且**大概率会自己要改**（研究面板、IC 讨论稿、专家纪要、行业研究、一页纸）→ **默认就带上这一层，不用等他开口。**
-- 用户说「这个 HTML 不好改」「加个批注」「要能保存」「Ctrl+S」→ 直接按本技能执行。
+> **硬规则（jg 2026-09-14 立的）**：凡是让我「做 HTML / 做面板 / 出一页纸 / 改这个网页」的请求，**一律先调用本技能**，交付物默认就是「可编辑 + 可批注 + 可就地保存」的单文件版本 —— 不用等他开口要。
+
+- jg 说「搞个 HTML」「做个面板」，并且**大概率会自己要改**（研究面板、IC 讨论稿、专家纪要、行业研究、一页纸）→ **默认就带上这一层，不用等他开口。**
+- jg 说「这个 HTML 不好改」「加个批注」「要能保存」「Ctrl+S」→ 直接按本技能执行。
 - 例外：他明确说「只要只读版」。
 
 ## 2. 两步交付（最少命令）
@@ -30,15 +32,18 @@ python verify_panel.py out.html
 ```
 
 要求：`content.html` 必须是**完整 HTML**（有 `<head><style>…</style></head><body>…</body>`）。
-`build_panel.py` 会在 `</style>` 前插 CSS、在 `</body>` 前插四块 script（`pv-anyedit-data`、`pv-notes-data`、`pv-anyedit-module`、`pv-notes-module`）。**幂等**，可反复跑。
+`build_panel.py` 会在 `</style>` 前插 CSS、在 `</body>` 前插五块 script（`pv-anyedit-data`、`pv-notes-data`、`pv-anyedit-module`、`pv-notes-module`、`pv-mode-module`）。**幂等**（字节级，已验证反复跑大小不变），可反复跑。
 
-> 内容型面板的排版规则（中英并列、黄框结论、字号基线、SVG 图表写法等）见 项目内的 项目内的排版规范文档，本技能只管"可编辑/可保存"这一层。
+> 改了 `assets/*.js` 之后**必须重新 build**：成品 HTML 里的模块是构建时拷进去的，不是外链。
+
+> 内容型面板的排版规则（中英并列、黄框结论、字号基线、SVG 图表写法等）见 jg 的 `html-report-playbook.md`，本技能只管"可编辑/可保存"这一层。
 
 ## 3. 产出后用户会看到什么
 
 | 位置 | 控件 | 作用 |
 |---|---|---|
-| 右下角 | **✎ 任意编辑：开/关** | 默认**开**。开着时点任意元素 → 浮出工具条 |
+| **右上角** | **「阅读 ｜ 编辑」两段开关** | **默认阅读模式**：没有 hover 描边 / 选中高亮，顶部导航与分页器照常可点，最干净；点「编辑」才进入可改状态（绿灯 = 编辑中） |
+| 右下角 | **✎ 任意编辑：开/关** | 由右上角模式开关联动（阅读模式下自动隐藏）。开着时点任意元素 → 浮出工具条 |
 | 右下角 | **💾 保存** | 覆盖保存当前文件（等同 Ctrl+S） |
 | 右下角 | **📁 授权文件夹（一次）** | 授权一次后**整个文件夹永久免弹窗**；已授权时自动隐藏 |
 | 元素右侧 | **A− 15.5px A+** | 鼠标划过某段文字时出现；**点选该元素后按钮会"钉住"**，鼠标挪过去也不消失 |
@@ -50,8 +55,9 @@ python verify_panel.py out.html
 
 ## 4. 十条**不可协商**的规则（都是踩过的坑）
 
-1. **编辑器默认必须是「开」**。默认关 = 用户点一下没反应 = "没法编辑"。
-2. **默认开就必须做穿透白名单**：`nav#tabs`、`.pager`、`#hint`、`details > summary`、`[data-goto]` 一律放行（否则导航点不动）；**Alt+点击**才强制选中它们。
+1. **默认进「阅读模式」，但模式开关必须显眼**（右上角固定两段开关，永远可见）。
+   旧规则是「编辑器默认开」，实测反而最招人烦：鼠标一划满屏橙色虚框、点顶部导航还会误选中。现在的口径是「**默认干净、一键可编辑**」——开关就在右上角，绿灯亮 = 编辑中。
+2. **编辑模式必须做穿透白名单**：`nav`、`[data-tab]`、`[data-view]`、`[data-sec]`、`#pageCtl`、`.pager`、`#hint`、`details > summary`、`[data-goto]` 一律放行（否则导航点不动，用户会抱怨「点标签没反应」）；**Alt+点击**才强制选中它们。白名单在 `pv-anyedit.js` 的 `PASS` 里，收面板自己的导航类控件时记得一起加。
 3. **hover 型浮动控件必须支持"点选钉住 + 祖先不抢目标 + 延迟隐藏"**这三件套，否则用户永远点不中它（鼠标从文字走向按钮时经过外层容器，控件会跳走/消失）。
 4. **任意元素都要能改字**（含 `<li>` 这种内含 `<b>` 的容器）：直接给该元素加 `contenteditable`，不要只允许"叶子元素"；同时 `onClick` 里 `if(EDITING && EDITING.contains(t)) return;`，否则在容器内点一下放光标会被当成重新选中。
 5. **删除要能自动补位、还要能撤销**：网格容器删除子元素后把 `grid-template-columns` 收紧到 `min(原始列数, 剩余数)`（原始列数存在 `data-pae-cols` 上，否则撤销回不去）；撤销要用 **DOM 引用**（`{node,parent,idx,next}`）插回，并同时清 `hidden` 记录、重存冻结快照。
@@ -69,16 +75,11 @@ python verify_panel.py out.html
    并把 `SecurityError` / "user gesture" 单独 catch 出来，提示用户"点右下角「💾 保存」按钮一次即可"（点击手势窗口更宽裕）。
    **验证方法**：stub `PVNotes._idbGet` 返回一个 **1.4s 才 resolve** 的 Promise，记录 `performance.now()`，断言 `picker` 的调用时间戳与 `keydown` 派发时间**相差 ≈ 0ms**。
 
-12. **工具条必须用 `position:fixed` + 视口坐标定位。** 编辑器的浮层容器 `#pvanyedit-ui` 本身是 `position:fixed` 但**没有 top/left**，它的静态位置在文档末尾；此时若工具条写成 `position:absolute` 并用"文档坐标"（`pageYOffset + rect.top`）定位，**工具条会被放到文档几万像素处 —— 看起来就是"点了没反应"**。正确写法：工具条 `position:fixed`，`top = rect.top - barH - 6`（放不下就翻到元素下方），再按视口宽高钳制。`verify_panel.py` 已内置这项断言（会打印 `toolbar = inside-viewport:…`）。
-13. **若面板带「阅读 / 编辑」模式开关（`pv-mode.js`，默认阅读模式）**，自检与截图都要**先切到编辑模式**再断言工具条/浮动按钮；否则会得到一堆"看不见"的假失败。
+12. **★ 浮动按钮必须常驻屏幕，而且要有失效兜底**：`保存` 的定位不能只在页面底部出现。`pv-mode.js` 里做了两件事：① 默认用 `position:fixed!important` 钉在右下角（bottom 52px，在分页器上方）；② 每 300ms 检测一次「按钮底边是否 ≈ innerHeight − offset」，一旦不符（说明页面被塞进带 `transform` 的容器 —— iframe 预览器、内置浏览器就是这样把 `fixed` 吃掉的），立刻切成 `absolute + 跟随滚动`。**注意：兜底要用 `setProperty(..., 'important')` 写内联样式**，否则压不住自己 CSS 里的 `!important`（本轮踩过）。
 
-14. **"第一次保存默认开在当前文件夹"做不到，不要承诺。** Chrome 没有"从文件句柄反查所在目录"的接口（`FileSystemFileHandle.prototype.getParent` 在 Chrome 153 仍是 `undefined`），也没有"路径字符串 → 目录句柄"的 API，所以首次弹窗的起始目录由浏览器决定（通常是"下载"）。**正确做法是给出"只做一次"的更优路径并显著引导**：
-    - **授权文件夹一次** → 整个文件夹永久免弹窗（`dir.getFileHandle(同名文件,{create:true})` 静默覆盖，对所有文件有效）；
-    - 把文件/文件夹**拖进页面**（`getAsFileSystemHandle()`）→ 零弹窗；
-    - 首次弹 文件选择器时，**预填文件名**（`suggestedName`）+ `id`（让 Chrome 记住该 id 上次用过的目录）+ 已知句柄作 `startIn`。
-    **授权文件夹后必须校验"这个文件夹里真的有这个文件"**：用 `dir.getFileHandle(当前文件名)`（**不带 `{create:true}`**）探测，`NotFoundError` 就说明用户选错了文件夹 —— 此时**必须拒绝写入、清掉这次授权、并提示重选**，否则会静默地把文件写到"下载"里去，用户重开原文件发现"没保存"。每次保存也做同样校验（`getFileHandle` 不带 create），发现不对就 `clearHandle("dir")` 并自动引导重选。写完还要 `getFile().size` 比对一次，确认真的落盘。**保存成功的提示里必须带文件夹名**（`dirHandle.name`），让用户一眼看出存到哪了。
-**无句柄时（本机第一次）走"选一次文件夹"**：`showDirectoryPicker` → `dir.getFileHandle(同名文件,{create:true})` → 静默覆盖 → 该文件夹下所有文件永久免弹窗。**弹窗必须同步调用**（中间不能 await）。首次打开且无句柄时底部弹一次性引导条引导做这件事。
-    **更好的做法：把"第一次 Ctrl+S"直接做成"选一次文件夹"**（`showDirectoryPicker` → `dir.getFileHandle(currentName(),{create:true})` → 静默写入），用户一次操作就永久免弹窗，不用先点引导条；用户取消则退回 `showSaveFilePicker`。**弹窗必须同步调用**（中间不能 await，否则手势过期报 SecurityError）。保存按钮上用 `💾 保存 ✓` 表示"已记住授权"。
+13. **★ 保存产物里绝不能有编辑器自己的 UI**：`pv-notes.js` 的 `doSave()` 必须走 `window.PVAnyEdit.build()`（不是闭包里的 `buildOutput()`）—— 闭包绕不过 pv-anyedit 的 UI 摘除包装，否则存出来的文件会把 `#pvanyedit-ui` 一起烘进去，**重开后出现两个工具条**。验收方式：保存产物塞进 iframe 重开，`#pvanyedit-ui` 必须恰好 1 个。
+
+14. **★ 财务 / 数字类面板的显示口径（jg 2026-09-14 定，做数字面板必守）**：(i) **金额不保留小数**，但 |金额| &lt; 10 亿最多 1 位小数、&lt; 1 亿 2 位小数（否则小科目会显示成 0）；(ii) **百分比一律 1 位小数**；(iii) 表里每一格都必须过**同一个格式化函数**，绝不允许手写数字字符串；(iv) 若面板源自 Excel / 工作表，文末要附一节 **「模型原表」矢量备份**：用 Excel COM 读每个单元格的 `.Text`（即 Excel 自己的显示格式，含千分位与括号负数），再用 SVG 重排 —— **不是位图截图**，放大打印不失真、可检索。SVG 生成要点：列宽 = 该列最长文本估宽 + 2×padding（CJK 1.02em / ASCII 0.58em，与 `verify_panel.py` 同一算法），行高 ≥ 1.02×字号 + 1px，并在列宽被上限截断时**逐格缩字号兜底** —— 这样必然通过 SVG 越界/重叠审计。
 
 ## 5. 交付前必须跑的检查
 
@@ -118,10 +119,11 @@ python verify_panel.py out.html
 
 ## 8. 交付话术
 
-把文件发出去时，**连 `assets/收件人一页说明.md` 一起发**，并主动告知两件事：
+把文件发出去时，**连 `assets/收件人一页说明.md` 一起发**，并主动告知三件事：
 
-1. 想删表格/调顺序要先确保「✎ 任意编辑」是开着的，点元素 → 工具条；
-2. 第一次 Ctrl+S 弹一次授权框（选一次文件夹），之后不会再弹。
+1. 打开默认是**阅读模式**（最干净）；要改就点**右上角「编辑」**，再点元素 → 浮出工具条；
+2. 右下角 **💾 保存** 一直在屏幕里，Ctrl+S 也行；
+3. 第一次保存弹一次授权框（选一次文件夹），之后不会再弹。
 
 ## 9. 目录结构
 
@@ -130,11 +132,11 @@ pv-editable-html/
 ├─ SKILL.md                     ← 本文件
 ├─ README.md                    ← 部署到其他机器 / 其他 Agent 的方法
 ├─ assets/
-│  ├─ build_panel.py            ← 一键生成可编辑版（含编辑器 CSS 注入）
-│  ├─ verify_panel.py           ← 一键自检（渲染 / 越界 / 重叠 / 遮挡 / 工具条位置）
-│  ├─ pv-anyedit.js             ← 任意元素编辑器（零依赖）
-│  ├─ pv-notes.js               ← 批注 / 就地编辑 / 保存链（零依赖）
-│  ├─ pv-mode.js                ← 右上角「阅读 / 编辑」模式开关 + 浮动按钮兜底
+│  ├─ build_panel.py            ← 一键生成可编辑版
+│  ├─ verify_panel.py           ← 一键自检
+│  ├─ pv-anyedit.js             ← 任意元素编辑器（38KB，零依赖）
+│  ├─ pv-notes.js               ← 批注 / 就地编辑 / 保存链（70KB，零依赖）
+│  ├─ pv-mode.js                ← 右上角「阅读 / 编辑」模式开关 + 浮动按钮常驻兜底（零依赖）
 │  ├─ inject_pvnotes.py         ← 只注入批注层（已有面板补批注时用）
 │  └─ 收件人一页说明.md          ← 随文件转发给阅读者
 ├─ references/
@@ -148,10 +150,37 @@ pv-editable-html/
 ```powershell
 # 把整个 pv-editable-html 文件夹放到目标机的技能目录即可
 # 方式一：软链到 OneDrive 上的分发源（推荐，多机同步）
-cmd /c mklink /J "%USERPROFILE%\.dsh\skills\pv-editable-html" "<OneDrive>\<技能分发目录>\skills\pv-editable-html"
+cmd /c mklink /J "%USERPROFILE%\.dsh\skills\pv-editable-html" "<OneDrive>\jg AI Agent\skillmemory\skills\pv-editable-html"
 # 方式二：直接拷贝
 Copy-Item -Recurse <OneDrive>\...\skills\pv-editable-html "$env:USERPROFILE\.dsh\skills\"
 ```
 
 依赖：**Python 3**（脚本用标准库）+ 本机 **Chrome**（自检用）+ **Node**（可选，语法检查用）。
 两个 JS 模块**零依赖**，不需要网络、不需要 CDN。
+
+## 12. 环境问题排查（交付物本身没问题，但"用起来不对"时先看这里）
+
+### 「在资源管理器中打开」点了没反应 / 跳到"桌面"或"文档"
+
+**这是 DSH 自身的问题，不是你做的 HTML 有问题。** 路径含**中文 / 全角字符（【】（））/ 空格**时必现。
+
+根因：`@deepseek-ai/dsh-native-command` 的 `revealNativePath` 执行
+`execFile("explorer.exe", ["/select,", <file:// 百分号编码 URL>])` —— Explorer 解析不了这种路径，
+静默退回"桌面"或"文档"。
+
+修复（幂等、可还原）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/patch-dsh-reveal.ps1
+# 只看状态： -Check      还原： -Restore      指定 runtime： -RuntimeRoot "D:\...\deepseek-harness-runtime"
+```
+
+**改完必须重启 DSH**（node 进程缓存了旧模块）；`pnpm install` / 升级后重跑一次即可。
+
+### 「Ctrl+S 弹不出任何窗口」
+
+报错里出现 `Sandboxed documents aren't allowed to show a file picker` → 说明页面是从
+**网盘在线预览 / 微信 / 内嵌预览窗**打开的，那种环境浏览器禁止一切文件选择器。
+**正确做法**：在资源管理器里右键 → 打开方式 → Chrome。面板检测到这种环境会自动
+降级为"下载一份改好的副本"，不会让你白改。
+

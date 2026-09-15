@@ -250,6 +250,44 @@ jg-editable-html/
 
 ---
 
+## 🩺 已知环境问题（不是这个项目的问题，但会影响体验）
+
+<details>
+<summary><b>点「在资源管理器中打开」没反应，或跳到"桌面"/"文档"（中文路径必现）</b></summary>
+
+这是宿主工具自身的问题：它执行 `explorer.exe /select, <file:// 百分号编码 URL>`，
+而 Explorer **解析不了含中文 / 全角字符（【】（））/ 空格的 file:// 路径**，于是静默退回"桌面"。
+
+实测（用 Shell COM 枚举窗口做前后快照）：
+
+| 目标文件名 | `["/select,", file:// URL]` | PowerShell `/select,"纯路径"` |
+|---|---|---|
+| `plain.html` | ✅ | ✅ |
+| `目标（测试）【x】.html` | ❌ 打开"桌面" | ✅ |
+| 真实中文长路径 | ❌ 打开"文档" | ✅ |
+
+修复脚本（幂等 / 可还原 / 自动定位 runtime）：
+
+```powershell
+.\tools\patch-dsh-reveal.ps1            # 打补丁
+.\tools\patch-dsh-reveal.ps1 -Check     # 只看状态
+.\tools\patch-dsh-reveal.ps1 -Restore   # 还原
+```
+
+改完**重启宿主进程**才生效（模块已被缓存）。
+</details>
+
+<details>
+<summary><b>Ctrl+S 弹不出任何窗口，报 <code>Sandboxed documents aren't allowed to show a file picker</code></b></summary>
+
+说明这个 HTML 是从**网盘在线预览 / 微信 / 内嵌预览窗**打开的 —— 那种环境浏览器
+**禁止一切文件选择器**。请在**资源管理器里右键 → 打开方式 → Chrome** 直接打开文件。
+
+面板检测到这种环境会自动降级：选文件夹 → 另存为 → **下载一份改好的副本**，不会让你白改。
+</details>
+
+---
+
 ## ❓ FAQ
 
 **Q：改了以后重新跑 `build_panel.py`，之前的修改会丢吗？**
