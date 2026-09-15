@@ -643,7 +643,7 @@
   function refreshSaveHint(){
     var b=document.querySelector('[data-pae="save"]');
     if(!b) return;
-    var t = dirHandle ? '已授权文件夹：Ctrl+S 直接覆盖，不再弹窗'
+    var t = dirHandle ? ('已授权文件夹「'+dirHandle.name+'」：Ctrl+S 直接覆盖')
           : memHandle ? '已记住这个文件：Ctrl+S 直接覆盖'
           : '第一次保存：选一次这个文件所在的文件夹，之后就不用再选了';
     b.setAttribute('title', t);
@@ -739,6 +739,11 @@
       });
     });
   }
+  function clearHandle(kind){
+    var ks=handleKeys(kind);
+    paePut(ks[0], null); paePut(ks[1], null);
+    if(window.PVNotes&&window.PVNotes._idbPut){ window.PVNotes._idbPut(ks[0], null); window.PVNotes._idbPut(ks[1], null); }
+  }
   function writeHandle(kind, h){
     var ks=handleKeys(kind);
     paePut(ks[0], h); paePut(ks[1], h);
@@ -755,8 +760,20 @@
     if(txt==='💾 保存') b.textContent = (dirHandle||memHandle) ? '💾 保存 ✓' : '💾 保存';
   }
   function writeWith(h, html){
+    var expect = null;
+    try{ expect = new Blob([html]).size; }catch(e){}
     return h.createWritable().then(function(w){
       return w.write(html).then(function(){ return w.close(); });
+    }).then(function(){
+      /* 写完立刻读回来比对大小 —— 防止"提示成功、其实没落盘" */
+      if(expect===null || typeof h.getFile!=='function') return true;
+      return h.getFile().then(function(f){
+        if(f.size===expect) return true;
+        throw new Error('写入校验失败（文件 '+f.size+' 字节，应为 '+expect+'）');
+      }).catch(function(err){
+        if(/校验失败/.test(err && err.message || '')) throw err;
+        return true;   /* 读不回来不算失败（有些环境不支持） */
+      });
     });
   }
   function saveCurrent(forcePicker){
@@ -774,7 +791,7 @@
       SAVING=false; loadDir();
       var t=new Date(), hh=('0'+t.getHours()).slice(-2), mm=('0'+t.getMinutes()).slice(-2);
       setSaveLabel('💾 已保存 '+hh+':'+mm);
-      toast('已保存到原文件（覆盖）');
+      toast(window.__paeSavedTo ? ('已保存到文件夹「'+window.__paeSavedTo+'」') : '已保存到原文件（覆盖）');
       setTimeout(function(){ setSaveLabel('💾 保存'); }, 4000);
     };
     var fail=function(err){
@@ -790,16 +807,27 @@
     /* 0) 已授权文件夹 → 直接写「同名文件」，零弹窗，且对这个文件夹里所有文件都有效 */
     if(dirHandle && typeof dirHandle.getFileHandle!=='function'){ dirHandle=null; updateAuthBtn(); }
     if(dirHandle){
-      return dirHandle.getFileHandle(currentName(), {create:true})
+      return dirHandle.getFileHandle(currentName())
         .then(function(fh){ return ensurePerm(fh).then(function(ok){ return ok?fh:null; }); })
         .then(function(fh){
-          if(!fh) throw new Error('文件夹权限已失效，请点「📁 授权文件夹」重新授权');
+          if(!fh) throw new Error('文件夹权限已失效，请重新授权一次');
           return writeWith(fh, html);
         })
-        .then(done)
+        .then(function(){
+          window.__paeSavedTo = dirHandle ? dirHandle.name : '';
+          done();
+          return true;
+        })
         .catch(function(err){
-          dirHandle=null; updateAuthBtn();
+          var nf = err && (err.name==='NotFoundError' || /not found/i.test(err.message||''));
+          var nm = dirHandle ? dirHandle.name : '之前的文件夹';
+          dirHandle=null; clearHandle('dir'); updateAuthBtn(); refreshSaveHint();
+          if(nf){
+            toast('「'+nm+'」里没有「'+currentName()+'」—— 之前授权选错了（存到别的文件夹去了），现在重选');
+            return firstTimeAuth(html).then(done).catch(fail);   /* 立刻引导重选 */
+          }
           fail(err);
+          return false;
         });
     }
     /* 1) 本次会话已拿到的句柄 → 直接写，零弹窗 */
@@ -937,18 +965,31 @@
       throw e;
     }
     return p.then(function(d){
-      dirHandle=d;
-      writeHandle('dir', d);
-      updateAuthBtn(); refreshSaveHint(); hideFirstRun();
-      return dirHandle.getFileHandle(currentName(), {create:true})
-        .then(function(fh){ return ensurePerm(fh).then(function(ok){ return ok?fh:null; }); })
+      /* 关键：先确认"这个文件夹里真的有当前这个文件"。
+         网页无法知道自己在哪个文件夹，所以只能靠"文件在不在"来验证用户有没有选错。 */
+      return d.getFileHandle(currentName())
         .then(function(fh){
-          if(!fh) throw new Error('文件夹权限不足，请重新授权');
-          return writeWith(fh, html);
+          dirHandle=d;
+          writeHandle('dir', d);
+          updateAuthBtn(); refreshSaveHint(); hideFirstRun();
+          return ensurePerm(fh).then(function(ok){ return ok?fh:null; })
+            .then(function(f){
+              if(!f) throw new Error('文件夹权限不足，请重新授权');
+              return writeWith(f, html);
+            })
+            .then(function(){
+              toast('已授权文件夹「'+d.name+'」：以后 Ctrl+S 直接覆盖，永远不再弹窗');
+              window.__paeSavedTo = d.name;
+              return true;
+            });
         })
-        .then(function(){
-          toast('已授权文件夹「'+d.name+'」：以后 Ctrl+S 直接覆盖，永远不再弹窗');
-          return true;
+        .catch(function(err){
+          if(err && err.name==='NotFoundError'){
+            dirHandle=null; clearHandle('dir');
+            throw new Error('你选的文件夹里没有「'+currentName()+'」—— 请再按一次 Ctrl+S 重选，'
+                          + '要选这个 HTML 文件本身所在的那个文件夹（不是"下载"）');
+          }
+          throw err;
         });
     }).catch(function(err){
       if(err && err.name==='AbortError'){

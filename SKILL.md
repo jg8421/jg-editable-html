@@ -76,7 +76,8 @@ python verify_panel.py out.html
     - **授权文件夹一次** → 整个文件夹永久免弹窗（`dir.getFileHandle(同名文件,{create:true})` 静默覆盖，对所有文件有效）；
     - 把文件/文件夹**拖进页面**（`getAsFileSystemHandle()`）→ 零弹窗；
     - 首次弹 文件选择器时，**预填文件名**（`suggestedName`）+ `id`（让 Chrome 记住该 id 上次用过的目录）+ 已知句柄作 `startIn`。
-    **无句柄时（本机第一次）走"选一次文件夹"**：`showDirectoryPicker` → `dir.getFileHandle(同名文件,{create:true})` → 静默覆盖 → 该文件夹下所有文件永久免弹窗。**弹窗必须同步调用**（中间不能 await）。首次打开且无句柄时底部弹一次性引导条引导做这件事。
+    **授权文件夹后必须校验"这个文件夹里真的有这个文件"**：用 `dir.getFileHandle(当前文件名)`（**不带 `{create:true}`**）探测，`NotFoundError` 就说明用户选错了文件夹 —— 此时**必须拒绝写入、清掉这次授权、并提示重选**，否则会静默地把文件写到"下载"里去，用户重开原文件发现"没保存"。每次保存也做同样校验（`getFileHandle` 不带 create），发现不对就 `clearHandle("dir")` 并自动引导重选。写完还要 `getFile().size` 比对一次，确认真的落盘。**保存成功的提示里必须带文件夹名**（`dirHandle.name`），让用户一眼看出存到哪了。
+**无句柄时（本机第一次）走"选一次文件夹"**：`showDirectoryPicker` → `dir.getFileHandle(同名文件,{create:true})` → 静默覆盖 → 该文件夹下所有文件永久免弹窗。**弹窗必须同步调用**（中间不能 await）。首次打开且无句柄时底部弹一次性引导条引导做这件事。
     **更好的做法：把"第一次 Ctrl+S"直接做成"选一次文件夹"**（`showDirectoryPicker` → `dir.getFileHandle(currentName(),{create:true})` → 静默写入），用户一次操作就永久免弹窗，不用先点引导条；用户取消则退回 `showSaveFilePicker`。**弹窗必须同步调用**（中间不能 await，否则手势过期报 SecurityError）。保存按钮上用 `💾 保存 ✓` 表示"已记住授权"。
 
 ## 5. 交付前必须跑的检查
