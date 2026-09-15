@@ -767,10 +767,53 @@
     try{ return runSave(html); }
     catch(e){ SAVING=false; setSaveLabel('💾 保存'); toast('保存失败：'+((e&&e.message)||'未知原因')); }
   }
+  /* ---------- 本地保存助手（可选）：真正的零弹窗、零操作 ----------
+     本机跑着 pv-save-helper 时，Ctrl+S 直接把内容 POST 给它，它按"页面当前路径"
+     写回原文件 —— 不弹窗、不用按回车。没跑助手时自动退回浏览器原生流程。 */
+  var HELPER_URL = 'http://127.0.0.1:8765';
+  function helperPing(){
+    return new Promise(function(res){
+      var done=false, t=setTimeout(function(){ if(!done){ done=true; res(false); } }, 450);
+      function fin(v){ if(done) return; done=true; clearTimeout(t); res(v); }
+      try{
+        var x=new XMLHttpRequest();
+        x.open('GET', HELPER_URL+'/ping?_='+Date.now(), true);
+        x.timeout=450;
+        x.onload=function(){ fin(x.status===200); };
+        x.onerror=function(){ fin(false); };
+        x.ontimeout=function(){ fin(false); };
+        x.send();
+      }catch(e){ fin(false); }
+    });
+  }
+  function localPath(){
+    try{
+      var p = decodeURIComponent((location.pathname||''));
+      if(/^\/[A-Za-z]:/.test(p)) p = p.slice(1);   /* /C:/xxx -> C:/xxx */
+      return p;
+    }catch(e){ return ''; }
+  }
+  function helperSave(html){
+    var path = localPath();
+    if(!path) return Promise.resolve({ ok:false, error:'无法取得本地路径（不是 file:// 打开的？）' });
+    return new Promise(function(res, rej){
+      try{
+        var x=new XMLHttpRequest();
+        x.open('POST', HELPER_URL+'/save', true);
+        x.setRequestHeader('Content-Type','application/json');
+        x.timeout=20000;
+        x.onload=function(){
+          try{ res(JSON.parse(x.responseText||'{}')); }catch(e){ rej(new Error('助手返回异常')); }
+        };
+        x.onerror=function(){ rej(new Error('助手连接失败')); };
+        x.ontimeout=function(){ rej(new Error('助手写入超时')); };
+        x.send(JSON.stringify({ path:path, html:html }));
+      }catch(e){ rej(e); }
+    });
+  }
   function runSave(html){
     var done=function(){
-      SAVING=false;
-      loadDir();
+      SAVING=false; loadDir();
       var t=new Date(), hh=('0'+t.getHours()).slice(-2), mm=('0'+t.getMinutes()).slice(-2);
       setSaveLabel('💾 已保存 '+hh+':'+mm);
       toast('已保存到原文件（覆盖）');
@@ -780,6 +823,26 @@
       SAVING=false; setSaveLabel('💾 保存');
       toast('保存失败：'+((err&&err.message)||'未知原因'));
     };
+    /* 0) 本地保存助手在跑 → 直接写，零弹窗、零操作 */
+    return helperPing().then(function(ok){
+      if(!ok) return null;
+      return helperSave(html).then(function(r){
+        if(r && r.ok){ done(); return true; }
+        toast('本地助手没能写入（'+((r&&r.error)||'未知')+'），已改用浏览器保存');
+        return null;
+      }).catch(function(){
+        toast('本地助手连接中断，已改用浏览器保存');
+        return null;
+      });
+    }).catch(function(){ return null; }).then(function(handled){
+      if(handled) return true;
+      return fallbackSave(html, done, fail);
+    }).catch(fail);
+  }
+
+  function fallbackSave(html, done, fail){
+    done = done || function(){ SAVING=false; };
+    fail = fail || function(e){ SAVING=false; setSaveLabel('💾 保存'); toast('保存失败：'+((e&&e.message)||'')); };
     /* 0) 已授权文件夹 → 直接写「同名文件」，零弹窗，且对这个文件夹里所有文件都有效 */
     if(dirHandle && typeof dirHandle.getFileHandle!=='function'){ dirHandle=null; updateAuthBtn(); }
     if(dirHandle){
