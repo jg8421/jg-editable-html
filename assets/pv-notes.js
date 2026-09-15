@@ -1,6 +1,6 @@
 /* =====================================================================
    pv-notes v1.0  ·  单文件 HTML 「批注 + 就地编辑 + 保存回文件」注入层
-   适用：本仓库 研究面板（单文件 / 离线 / 零依赖 / file:// 可开）
+   适用：研究面板（单文件 / 离线 / 零依赖 / file:// 可开）
    注入：inject_pvnotes.py 把本文件整体塞进目标 HTML 的 </body> 之前
    数据：批注与修改存在本文件内的 <script id="pv-notes-data"> 里，跟着文件走
    ===================================================================== */
@@ -515,7 +515,7 @@ function exportMdText(){
   L.push("");
   L.push("---");
   L.push("");
-  L.push("把本文件（或这份 md）发回给作者，即可按锚点逐条修订并出新版。");
+  L.push("把本文件（或这份 md）发回给 jg，即可按锚点逐条修订并出新版。");
   return L.join(String.fromCharCode(10));
 }
 function doExportMd(){
@@ -1060,7 +1060,7 @@ function init(){
   applyFrozen();
   reapplyEdits();
   var ai = q1("#pvnt-author");
-  if (ai) { ai.value = S.author || "批注者"; }
+  if (ai) { ai.value = S.author || "jg"; }
   renderAll();
   bindEvents();
   updateSaveState();

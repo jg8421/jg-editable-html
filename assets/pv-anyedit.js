@@ -750,6 +750,7 @@
     if(!b) return;
     b.textContent=txt;
     b.style.background = (ok===false) ? '#C2170A' : '#159788';
+    if(txt==='💾 保存') b.textContent = (dirHandle||memHandle) ? '💾 保存 ✓' : '💾 保存';
   }
   function writeWith(h, html){
     return h.createWritable().then(function(w){
@@ -796,9 +797,9 @@
     }
     /* 1) 本次会话已拿到的句柄 → 直接写，零弹窗 */
     if(!dirHandle && !memHandle){
-      /* 没有任何现成句柄：必须"同步"弹一次选择器。
-         中间绝不能 await（哪怕是读 IndexedDB），否则用户手势过期 → SecurityError → 文件没保存。 */
-      try{ return pickAndWrite(html).then(done).catch(fail); }
+      /* 没有任何现成句柄 = 这台机器上的第一次。
+         注意：弹窗必须"同步"调用，中间绝不能 await（否则用户手势过期 → SecurityError → 文件没保存）。 */
+      try{ return firstTimeAuth(html).then(done).catch(fail); }
       catch(e){ fail(e); return; }
     }
     if(memHandle){
@@ -911,6 +912,46 @@
     }catch(e){ toast('保存失败：'+e.message); }
   }
   /* 3) 没有句柄时才弹一次「另存为」：默认文件名=当前文件名（可自行改名），默认目录=原文件所在目录 */
+  /* 首次保存：优先让用户"选一次文件夹"——
+     一次选中，以后这个文件夹里所有 HTML 的 Ctrl+S 都直接覆盖，永远不再弹窗。
+     用户若取消，退回普通的"另存为"（只授权这一个文件）。 */
+  function firstTimeAuth(html){
+    if(!window.showDirectoryPicker) return pickAndWrite(html);
+    patchPicker();
+    toast('第一次保存：请选一次这个 HTML 所在的文件夹 —— 选完以后就不用再选了');
+    var p;
+    try{
+      p=window.showDirectoryPicker({id:'pvpanel-dir', mode:'readwrite'});
+    }catch(e){
+      if(e && (e.name==='SecurityError' || /user gesture|user activation/i.test(e.message||''))){
+        toast('浏览器没放行这次弹窗 —— 请点右下角「💾 保存」按钮一次即可');
+        return Promise.resolve(false);
+      }
+      throw e;
+    }
+    return p.then(function(d){
+      dirHandle=d;
+      writeHandle('dir', d);
+      updateAuthBtn(); refreshSaveHint(); hideFirstRun();
+      return dirHandle.getFileHandle(currentName(), {create:true})
+        .then(function(fh){ return ensurePerm(fh).then(function(ok){ return ok?fh:null; }); })
+        .then(function(fh){
+          if(!fh) throw new Error('文件夹权限不足，请重新授权');
+          return writeWith(fh, html);
+        })
+        .then(function(){
+          toast('已授权文件夹「'+d.name+'」：以后 Ctrl+S 直接覆盖，永远不再弹窗');
+          return true;
+        });
+    }).catch(function(err){
+      if(err && err.name==='AbortError'){
+        toast('已取消。改走"另存为"：选好文件夹后按回车即可（只授权这一个文件）');
+        return pickAndWrite(html);
+      }
+      throw err;
+    });
+  }
+
   function pickAndWrite(html){
     if(!window.showSaveFilePicker){
       fallbackDownload(html);
