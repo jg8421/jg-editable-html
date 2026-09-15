@@ -645,8 +645,8 @@
     if(!b) return;
     var t = dirHandle ? '已授权文件夹：Ctrl+S 直接覆盖，不再弹窗'
           : memHandle ? '已记住这个文件：Ctrl+S 直接覆盖'
-          : '未授权：Ctrl+S 会下载一份改好的副本（零弹窗，发回给作者即可）';
-    b.setAttribute('title', t + '。想就地覆盖原文件：启动保存助手，或按住 Alt 点这里');
+          : '第一次保存：选一次这个文件所在的文件夹，之后就不用再选了';
+    b.setAttribute('title', t);
   }
   /* 关键：文件句柄必须在 boot 阶段就读进内存。
      否则 Ctrl+S 时要先 await IndexedDB，等回来时浏览器的"用户手势"窗口可能已经过期，
@@ -769,50 +769,6 @@
     try{ return runSave(html, !!forcePicker); }
     catch(e){ SAVING=false; setSaveLabel('💾 保存'); toast('保存失败：'+((e&&e.message)||'未知原因')); }
   }
-  /* ---------- 本地保存助手（可选）：真正的零弹窗、零操作 ----------
-     本机跑着 pv-save-helper 时，Ctrl+S 直接把内容 POST 给它，它按"页面当前路径"
-     写回原文件 —— 不弹窗、不用按回车。没跑助手时自动退回浏览器原生流程。 */
-  var HELPER_URL = 'http://127.0.0.1:8765';
-  function helperPing(){
-    return new Promise(function(res){
-      var done=false, t=setTimeout(function(){ if(!done){ done=true; res(false); } }, 450);
-      function fin(v){ if(done) return; done=true; clearTimeout(t); res(v); }
-      try{
-        var x=new XMLHttpRequest();
-        x.open('GET', HELPER_URL+'/ping?_='+Date.now(), true);
-        x.timeout=450;
-        x.onload=function(){ fin(x.status===200); };
-        x.onerror=function(){ fin(false); };
-        x.ontimeout=function(){ fin(false); };
-        x.send();
-      }catch(e){ fin(false); }
-    });
-  }
-  function localPath(){
-    try{
-      var p = decodeURIComponent((location.pathname||''));
-      if(/^\/[A-Za-z]:/.test(p)) p = p.slice(1);   /* /C:/xxx -> C:/xxx */
-      return p;
-    }catch(e){ return ''; }
-  }
-  function helperSave(html){
-    var path = localPath();
-    if(!path) return Promise.resolve({ ok:false, error:'无法取得本地路径（不是 file:// 打开的？）' });
-    return new Promise(function(res, rej){
-      try{
-        var x=new XMLHttpRequest();
-        x.open('POST', HELPER_URL+'/save', true);
-        x.setRequestHeader('Content-Type','application/json');
-        x.timeout=20000;
-        x.onload=function(){
-          try{ res(JSON.parse(x.responseText||'{}')); }catch(e){ rej(new Error('助手返回异常')); }
-        };
-        x.onerror=function(){ rej(new Error('助手连接失败')); };
-        x.ontimeout=function(){ rej(new Error('助手写入超时')); };
-        x.send(JSON.stringify({ path:path, html:html }));
-      }catch(e){ rej(e); }
-    });
-  }
   function runSave(html, forcePicker){
     var done=function(){
       SAVING=false; loadDir();
@@ -825,21 +781,7 @@
       SAVING=false; setSaveLabel('💾 保存');
       toast('保存失败：'+((err&&err.message)||'未知原因'));
     };
-    /* 0) 本地保存助手在跑 → 直接写，零弹窗、零操作 */
-    return helperPing().then(function(ok){
-      if(!ok) return null;
-      return helperSave(html).then(function(r){
-        if(r && r.ok){ done(); return true; }
-        toast('本地助手没能写入（'+((r&&r.error)||'未知')+'），已改用浏览器保存');
-        return null;
-      }).catch(function(){
-        toast('本地助手连接中断，已改用浏览器保存');
-        return null;
-      });
-    }).catch(function(){ return null; }).then(function(handled){
-      if(handled) return true;
-      return fallbackSave(html, done, fail, forcePicker);
-    }).catch(fail);
+    return fallbackSave(html, done, fail, forcePicker).catch(fail);
   }
 
   function fallbackSave(html, done, fail, forcePicker){
@@ -862,21 +804,10 @@
     }
     /* 1) 本次会话已拿到的句柄 → 直接写，零弹窗 */
     if(!dirHandle && !memHandle){
-      /* 没有任何现成句柄 = 这台机器上的第一次（多半是"同事收到文件直接打开"的场景）。
-         默认不弹任何窗口：直接把改好的副本下载下来，让 TA 发回来即可。
-         想就地覆盖：按住 Alt 点「💾 保存」（或 Alt+Ctrl+S），或先启动保存助手。 */
-      if(!forcePicker){
-        fallbackDownload(html);
-        SAVING=false;
-        setSaveLabel('💾 已下载副本');
-        toast('已下载改好的副本（原文件未改动）—— 把它发回给作者即可；'
-            + '想直接覆盖原文件：按住 Alt 点「💾 保存」，或先启动保存助手');
-        setTimeout(function(){ setSaveLabel('💾 保存'); }, 5000);
-        return Promise.resolve(true);
-      }
-      /* 显式要求覆盖保存：弹窗必须"同步"调用，中间绝不能 await（否则手势过期 → SecurityError）。 */
+      /* 这台机器上的第一次：选一次文件夹 → 立刻覆盖保存 → 以后永久静默。
+         弹窗必须"同步"调用（中间不能 await，否则用户手势过期 → SecurityError → 保存失败）。 */
       try{ return firstTimeAuth(html).then(done).catch(fail); }
-      catch(e){ fail(e); return; }
+      catch(e){ fail(e); return Promise.resolve(false); }
     }
     if(memHandle){
       return writeWith(memHandle, html).then(done).catch(function(){
@@ -923,7 +854,7 @@
   function showFirstRun(){
     if(firstRunHidden()||dirHandle||memHandle||document.getElementById('pae-firstrun')) return;
     var el=document.createElement('div'); el.id='pae-firstrun';
-    el.innerHTML='<span>💾 当前 Ctrl+S 会<b>下载一份改好的副本</b>（零弹窗）。想让它<b>直接覆盖原文件</b>：</span>'+
+    el.innerHTML='<span>💾 <b>一次性设置</b>：选一次这个 HTML 所在的文件夹，<b>以后所有文件 Ctrl+S 都直接覆盖、不再弹窗</b></span>'+
                  '<button type="button" class="pae-btn" style="background:#E0731A;border-color:#E0731A;color:#fff;font-weight:700" data-pae="fr-go">📁 现在就选（只需一次）</button>'+
                  '<button type="button" class="pae-btn" data-pae="fr-x" title="以后再说">✕</button>';
     document.body.appendChild(el);
