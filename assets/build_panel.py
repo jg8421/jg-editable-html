@@ -65,6 +65,8 @@ EDITOR_CSS = u"""
 .pae-drop.show{display:block}
 .pae-firstrun,#pae-firstrun{position:fixed;left:50%;transform:translateX(-50%);bottom:70px;z-index:2147483300;display:flex;align-items:center;gap:10px;max-width:min(940px,94vw);padding:9px 14px;border-radius:12px;background:#fff;border:2px solid #E0731A;box-shadow:0 6px 24px rgba(9,44,97,.25);font-size:13.5px;color:#092C61;font-family:Arial,"Microsoft YaHei",sans-serif;line-height:1.5}
 @media print{#pae-firstrun{display:none!important}}
+.pae-sandbox,#pae-sandbox{position:fixed;left:50%;transform:translateX(-50%);top:60px;z-index:2147483350;display:flex;align-items:center;gap:10px;max-width:min(960px,94vw);padding:10px 14px;border-radius:12px;background:#fff;border:2px solid #C2170A;box-shadow:0 6px 24px rgba(9,44,97,.28);font-size:13.5px;color:#092C61;font-family:Arial,"Microsoft YaHei",sans-serif;line-height:1.5}
+@media print{#pae-sandbox{display:none!important}}
 @media print{#pvanyedit-ui,.pae-drop{display:none!important}}
 /* ================= /pv-editable-html ================= */
 """

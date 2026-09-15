@@ -56,6 +56,8 @@ th{background:#edf2f8;color:var(--ink)}
 .pae-drop.show{display:block}
 .pae-firstrun,#pae-firstrun{position:fixed;left:50%;transform:translateX(-50%);bottom:70px;z-index:2147483300;display:flex;align-items:center;gap:10px;max-width:min(940px,94vw);padding:9px 14px;border-radius:12px;background:#fff;border:2px solid #E0731A;box-shadow:0 6px 24px rgba(9,44,97,.25);font-size:13.5px;color:#092C61;font-family:Arial,"Microsoft YaHei",sans-serif;line-height:1.5}
 @media print{#pae-firstrun{display:none!important}}
+.pae-sandbox,#pae-sandbox{position:fixed;left:50%;transform:translateX(-50%);top:60px;z-index:2147483350;display:flex;align-items:center;gap:10px;max-width:min(960px,94vw);padding:10px 14px;border-radius:12px;background:#fff;border:2px solid #C2170A;box-shadow:0 6px 24px rgba(9,44,97,.28);font-size:13.5px;color:#092C61;font-family:Arial,"Microsoft YaHei",sans-serif;line-height:1.5}
+@media print{#pae-sandbox{display:none!important}}
 @media print{#pvanyedit-ui,.pae-drop{display:none!important}}
 /* ================= /pv-editable-html ================= */
 </style>
@@ -1065,56 +1067,82 @@ th{background:#edf2f8;color:var(--ink)}
     }catch(e){ toast('保存失败：'+e.message); }
   }
   /* 3) 没有句柄时才弹一次「另存为」：默认文件名=当前文件名（可自行改名），默认目录=原文件所在目录 */
-  /* 首次保存：优先让用户"选一次文件夹"——
-     一次选中，以后这个文件夹里所有 HTML 的 Ctrl+S 都直接覆盖，永远不再弹窗。
-     用户若取消，退回普通的"另存为"（只授权这一个文件）。 */
+  var SB_WARNED = false;
+  function showSandboxWarning(){
+    if(SB_WARNED || document.getElementById('pae-sandbox')) return;
+    SB_WARNED = true;
+    var el=document.createElement('div'); el.id='pae-sandbox';
+    el.innerHTML='<span>⚠️ <b>这个环境禁止网页保存到原文件</b>（从网盘预览 / 微信 / 内嵌浏览器打开时会发生）。'
+               + '想正常保存：关掉它，在<b>资源管理器里右键 → 打开方式 → Chrome</b> 直接打开这个文件。</span>'
+               + '<button type="button" class="pae-btn" style="background:#159788;border-color:#159788;color:#fff;font-weight:700" data-pae="sb-dl">⬇ 先下载副本</button>'
+               + '<button type="button" class="pae-btn" data-pae="sb-x">✕</button>';
+    document.body.appendChild(el);
+    el.addEventListener('click', function(e){
+      var d=e.target.closest('[data-pae="sb-dl"]');
+      if(d){ e.preventDefault(); e.stopPropagation();
+        try{ saveCurrent(); }catch(err){} return; }
+      var x=e.target.closest('[data-pae="sb-x"]');
+      if(x){ e.preventDefault(); e.stopPropagation(); el.style.display='none'; }
+    }, false);
+  }
+
+  /* 是否处在"弹不出文件框"的环境（沙箱 iframe / 网盘预览 / 微信内置浏览器等） */
+  function sandboxedEnv(){
+    try{ if(window.top !== window.self) return true; }catch(e){ return true; }   /* 跨域说明在 iframe 里 */
+    return false;
+  }
+  function pickerBlocked(err){
+    if(!err) return false;
+    var m=(err.message||'')+' '+(err.name||'');
+    return /sandbox|not allowed|SecurityError|opaque|user gesture|user activation/i.test(m);
+  }
+
+  /* 首次保存：三级降级，永不空手而归
+     ① 选一次文件夹（最省事：一次授权 = 整个文件夹永久免弹窗）
+     ② 被沙箱拦住 / 用户取消 / 浏览器不支持 → 「另存为」，选中这个 HTML 文件本身
+     ③ 连"另存为"都弹不出来（沙箱）→ 直接下载一份改好的副本（不需要任何权限） */
   function firstTimeAuth(html){
-    if(!window.showDirectoryPicker) return pickAndWrite(html);
     patchPicker();
-    toast('第一次保存：请选一次这个 HTML 所在的文件夹 —— 选完以后就不用再选了');
+    if(!window.showDirectoryPicker || sandboxedEnv()) return pickAndWrite(html);
+
     var p;
-    try{
-      p=window.showDirectoryPicker({id:'pvpanel-dir', mode:'readwrite'});
-    }catch(e){
-      if(e && (e.name==='SecurityError' || /user gesture|user activation/i.test(e.message||''))){
-        toast('浏览器没放行这次弹窗 —— 请点右下角「💾 保存」按钮一次即可');
-        return Promise.resolve(false);
-      }
-      throw e;
-    }
-    return p.then(function(d){
-      /* 关键：先确认"这个文件夹里真的有当前这个文件"。
-         网页无法知道自己在哪个文件夹，所以只能靠"文件在不在"来验证用户有没有选错。 */
-      return d.getFileHandle(currentName())
-        .then(function(fh){
-          dirHandle=d;
-          writeHandle('dir', d);
-          updateAuthBtn(); refreshSaveHint(); hideFirstRun();
-          return ensurePerm(fh).then(function(ok){ return ok?fh:null; })
-            .then(function(f){
-              if(!f) throw new Error('文件夹权限不足，请重新授权');
-              return writeWith(f, html);
-            })
-            .then(function(){
-              toast('已授权文件夹「'+d.name+'」：以后 Ctrl+S 直接覆盖，永远不再弹窗');
-              window.__paeSavedTo = d.name;
-              return true;
-            });
-        })
-        .catch(function(err){
-          if(err && err.name==='NotFoundError'){
-            dirHandle=null; clearHandle('dir');
-            throw new Error('你选的文件夹里没有「'+currentName()+'」—— 请再按一次 Ctrl+S 重选，'
-                          + '要选这个 HTML 文件本身所在的那个文件夹（不是"下载"）');
-          }
-          throw err;
+    try{ p = window.showDirectoryPicker({id:'pvpanel-dir', mode:'readwrite'}); }
+    catch(e){ p = Promise.reject(e); }
+
+    return Promise.resolve(p).then(function(d){
+      /* 校验：这个文件夹里必须真的有当前这个文件，否则就是选错了 */
+      return d.getFileHandle(currentName()).then(function(fh){
+        dirHandle=d; writeHandle('dir', d);
+        updateAuthBtn(); refreshSaveHint(); hideFirstRun();
+        return ensurePerm(fh).then(function(ok){ return ok?fh:null; }).then(function(f){
+          if(!f) throw new Error('文件夹权限不足，请重新授权');
+          return writeWith(f, html);
+        }).then(function(){
+          toast('已授权文件夹「'+d.name+'」：以后 Ctrl+S 直接覆盖，永不再弹窗');
+          window.__paeSavedTo = d.name;
+          return true;
         });
+      }).catch(function(err){
+        if(err && err.name==='NotFoundError'){
+          dirHandle=null; clearHandle('dir');
+          throw new Error('你选的文件夹里没有「'+currentName()+'」—— 请再按一次 Ctrl+S，'
+                        + '选这个 HTML 文件本身所在的文件夹（不是"下载"）');
+        }
+        throw err;
+      });
     }).catch(function(err){
-      if(err && err.name==='AbortError'){
-        toast('已取消。改走"另存为"：选好文件夹后按回车即可（只授权这一个文件）');
+      var e = err || {};
+      if(e.name==='AbortError'){
+        toast('已取消。改用「另存为」：选中这个 HTML 文件本身即可（之后就不用再选了）');
         return pickAndWrite(html);
       }
-      throw err;
+      if(e.name==='NotFoundError' || /没有「/.test(e.message||'')){
+        throw e;                                   /* 选错文件夹：明确报错，不静默 */
+      }
+      /* 被沙箱拦 / 权限被拒 / 其它异常 → 一律降级到"另存为" */
+      if(pickerBlocked(e)) showSandboxWarning();
+      toast('这个环境不允许"选文件夹"，改用「另存为」（选中这个文件本身即可）');
+      return pickAndWrite(html);
     });
   }
 
@@ -1130,14 +1158,15 @@ th{background:#edf2f8;color:var(--ink)}
     else if(memHandle) opts.startIn=memHandle;   /* 存过同一文件 → 开在该文件所在目录 */
     var p;
     try{
-      toast('首次需要授权一次：窗口已定位到原文件夹、文件名已填好，直接点保存即可');
+      toast('首次需要授权一次：选中这个 HTML 文件本身，按回车即可（之后就不用再选了）');
       p=window.showSaveFilePicker(opts);
     }catch(e){
-      if(e && (e.name==='SecurityError' || /user gesture|user activation/i.test(e.message||''))){
-        toast('浏览器没放行这次弹窗 —— 请点右下角绿色的「💾 保存」按钮一次即可授权');
-        var b=document.querySelector('[data-pae="save"]');
-        if(b) b.style.boxShadow='0 0 0 3px #E0731A';
-        return Promise.resolve(false);
+      if(pickerBlocked(e)){
+        /* 连"另存为"都弹不出来（沙箱环境）→ 兜底：下载一份改好的副本，至少不丢改动 */
+        showSandboxWarning();
+        toast('当前环境禁止弹文件框 —— 已改为下载一份改好的副本（改完发回即可）');
+        fallbackDownload(html);
+        return Promise.resolve(true);
       }
       throw e;
     }
@@ -1149,6 +1178,11 @@ th{background:#edf2f8;color:var(--ink)}
       return writeWith(fh, html);
     }).then(function(){ return true; }).catch(function(err){
       if(err && err.name==='AbortError'){ toast('已取消保存（再按一次 Ctrl+S，或点「💾 保存」）'); return false; }
+      if(pickerBlocked(err)){
+        toast('当前环境禁止弹文件框 —— 已改为下载一份改好的副本');
+        fallbackDownload(html);
+        return true;
+      }
       throw err;
     });
   }
@@ -1164,6 +1198,7 @@ th{background:#edf2f8;color:var(--ink)}
     setTimeout(function(){ applyFrozen(); applyStyles(); applyHidden(); },400);
     setTimeout(function(){ applyStyles(); },1200);
     setTimeout(function(){ showFirstRun(); refreshSaveHint(); }, 1800);
+    setTimeout(function(){ if(sandboxedEnv()) showSandboxWarning(); }, 1200);
     window.PVAnyEdit={
       on:function(){ setOn(true); }, off:function(){ setOn(false); }, undo:undo, save:saveCurrent,
       apply:function(){ applyFrozen(); applyStyles(); applyHidden(); },
