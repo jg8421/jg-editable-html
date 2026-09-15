@@ -199,7 +199,7 @@
       var tg=e.target.closest('[data-pae="toggle"]');
       if(tg){ e.preventDefault(); e.stopPropagation(); setOn(!ON); return; }
       var sv=e.target.closest('[data-pae="save"]');
-      if(sv){ e.preventDefault(); e.stopPropagation(); saveCurrent(); return; }
+      if(sv){ e.preventDefault(); e.stopPropagation(); saveCurrent(e.altKey); return; }
       var au=e.target.closest('[data-pae="auth"]');
       if(au){ e.preventDefault(); e.stopPropagation(); authFolder(); return; }
     }, false);
@@ -387,7 +387,9 @@
     var inField = (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable) && !t.closest('#pvanyedit-ui');
     if(e.key==='Escape'){ if(EDITING){ endEdit(); } else { deselect(); } return; }
     if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&String(e.key).toLowerCase()==='s'){
-      e.preventDefault(); e.stopImmediatePropagation(); saveCurrent(); return;   /* Ctrl+S = 直接覆盖保存 */
+      e.preventDefault(); e.stopImmediatePropagation();
+      saveCurrent(e.altKey);      /* Ctrl+S = 保存；Alt+Ctrl+S = 强制走"覆盖原文件"（必要时弹一次授权） */
+      return;
     }
     if((e.ctrlKey||e.metaKey)&&String(e.key).toLowerCase()==='z'&&!EDITING){ e.preventDefault(); undo(); return; }
     if(inField||EDITING) return;
@@ -643,8 +645,8 @@
     if(!b) return;
     var t = dirHandle ? '已授权文件夹：Ctrl+S 直接覆盖，不再弹窗'
           : memHandle ? '已记住这个文件：Ctrl+S 直接覆盖'
-          : '首次保存需要授权一次（窗口会预填文件名）';
-    b.setAttribute('title', t+'　—— 点这里保存');
+          : '未授权：Ctrl+S 会下载一份改好的副本（零弹窗，发回给作者即可）';
+    b.setAttribute('title', t + '。想就地覆盖原文件：启动保存助手，或按住 Alt 点这里');
   }
   /* 关键：文件句柄必须在 boot 阶段就读进内存。
      否则 Ctrl+S 时要先 await IndexedDB，等回来时浏览器的"用户手势"窗口可能已经过期，
@@ -757,14 +759,14 @@
       return w.write(html).then(function(){ return w.close(); });
     });
   }
-  function saveCurrent(){
+  function saveCurrent(forcePicker){
     if(SAVING){ toast('正在保存…'); return; }
     SAVING=true;
     setSaveLabel('💾 保存中…');
     var html;
     try{ html=cleanHtml(); }
     catch(e){ SAVING=false; setSaveLabel('💾 保存'); toast('生成失败：'+e.message); return; }
-    try{ return runSave(html); }
+    try{ return runSave(html, !!forcePicker); }
     catch(e){ SAVING=false; setSaveLabel('💾 保存'); toast('保存失败：'+((e&&e.message)||'未知原因')); }
   }
   /* ---------- 本地保存助手（可选）：真正的零弹窗、零操作 ----------
@@ -811,7 +813,7 @@
       }catch(e){ rej(e); }
     });
   }
-  function runSave(html){
+  function runSave(html, forcePicker){
     var done=function(){
       SAVING=false; loadDir();
       var t=new Date(), hh=('0'+t.getHours()).slice(-2), mm=('0'+t.getMinutes()).slice(-2);
@@ -836,11 +838,11 @@
       });
     }).catch(function(){ return null; }).then(function(handled){
       if(handled) return true;
-      return fallbackSave(html, done, fail);
+      return fallbackSave(html, done, fail, forcePicker);
     }).catch(fail);
   }
 
-  function fallbackSave(html, done, fail){
+  function fallbackSave(html, done, fail, forcePicker){
     done = done || function(){ SAVING=false; };
     fail = fail || function(e){ SAVING=false; setSaveLabel('💾 保存'); toast('保存失败：'+((e&&e.message)||'')); };
     /* 0) 已授权文件夹 → 直接写「同名文件」，零弹窗，且对这个文件夹里所有文件都有效 */
@@ -860,8 +862,19 @@
     }
     /* 1) 本次会话已拿到的句柄 → 直接写，零弹窗 */
     if(!dirHandle && !memHandle){
-      /* 没有任何现成句柄 = 这台机器上的第一次。
-         注意：弹窗必须"同步"调用，中间绝不能 await（否则用户手势过期 → SecurityError → 文件没保存）。 */
+      /* 没有任何现成句柄 = 这台机器上的第一次（多半是"同事收到文件直接打开"的场景）。
+         默认不弹任何窗口：直接把改好的副本下载下来，让 TA 发回来即可。
+         想就地覆盖：按住 Alt 点「💾 保存」（或 Alt+Ctrl+S），或先启动保存助手。 */
+      if(!forcePicker){
+        fallbackDownload(html);
+        SAVING=false;
+        setSaveLabel('💾 已下载副本');
+        toast('已下载改好的副本（原文件未改动）—— 把它发回给作者即可；'
+            + '想直接覆盖原文件：按住 Alt 点「💾 保存」，或先启动保存助手');
+        setTimeout(function(){ setSaveLabel('💾 保存'); }, 5000);
+        return Promise.resolve(true);
+      }
+      /* 显式要求覆盖保存：弹窗必须"同步"调用，中间绝不能 await（否则手势过期 → SecurityError）。 */
       try{ return firstTimeAuth(html).then(done).catch(fail); }
       catch(e){ fail(e); return; }
     }
@@ -910,7 +923,7 @@
   function showFirstRun(){
     if(firstRunHidden()||dirHandle||memHandle||document.getElementById('pae-firstrun')) return;
     var el=document.createElement('div'); el.id='pae-firstrun';
-    el.innerHTML='<span>💾 <b>一次性设置</b>：选一次这个 HTML 所在的文件夹，<b>以后所有文件 Ctrl+S 都直接覆盖、不再弹窗</b></span>'+
+    el.innerHTML='<span>💾 当前 Ctrl+S 会<b>下载一份改好的副本</b>（零弹窗）。想让它<b>直接覆盖原文件</b>：</span>'+
                  '<button type="button" class="pae-btn" style="background:#E0731A;border-color:#E0731A;color:#fff;font-weight:700" data-pae="fr-go">📁 现在就选（只需一次）</button>'+
                  '<button type="button" class="pae-btn" data-pae="fr-x" title="以后再说">✕</button>';
     document.body.appendChild(el);
